@@ -1,102 +1,135 @@
+# 🧩 **Lab 09 - Aggregate Functions, GROUP BY, and HAVING (PostgreSQL Hands-on Lab)**
 
-# 🧩 **Lab 09 -  Aggregate Functions, GROUP BY, and HAVING (PostgreSQL)**
+---
+
+## 🧭 **Introduction**
+
+Aggregate functions are the foundation of analytics in SQL: they summarize many rows into meaningful metrics (counts, totals, averages). In PostgreSQL, understanding how aggregates interact with **NULLs**, **GROUP BY**, and **HAVING** is key to producing correct reports.
+
+This lab is designed to teach the most common “on the job” patterns:
+
+- `COUNT(*)` vs `COUNT(column)` (and why NULL matters)
+- Grouping with `GROUP BY`
+- Filtering **before** vs **after** aggregation (`WHERE` vs `HAVING`)
+- Aggregating across joins while keeping “zero” groups using OUTER JOIN + `COALESCE`
 
 ---
 
 ## 🎯 **Objectives**
 
-By the end of this module, learners will:
+By the end of this lab, learners will be able to:
 
-* Understand and use SQL **aggregate functions** (`COUNT`, `SUM`, `AVG`, `MIN`, `MAX`).
-* Group data using the `GROUP BY` clause.
-* Filter grouped results with the `HAVING` clause.
-* Combine aggregate functions with joins for practical analytics.
-
----
-
-## 🧠 **What Are Aggregate Functions?**
-
-Aggregate functions perform **calculations on multiple rows** and return a **single value** per group or dataset.
-
-For example:
-
-> “What is the average salary of employees per department?”
-
-Aggregate functions ignore `NULL` values unless specified otherwise.
+- Use aggregate functions: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`
+- Write correct `GROUP BY` queries (including multi-column grouping)
+- Filter grouped results using `HAVING`
+- Explain and avoid common aggregate mistakes (NULL handling, join duplication, `WHERE` vs `HAVING`)
 
 ---
 
-## 📊 **Common Aggregate Functions**
+## 🧠 **What are aggregate functions?**
 
-| Function    | Description            | Example            |
-| ----------- | ---------------------- | ------------------ |
-| **COUNT()** | Returns number of rows | `COUNT(*)`         |
-| **SUM()**   | Adds up numeric values | `SUM(base_salary)` |
-| **AVG()**   | Returns average value  | `AVG(base_salary)` |
-| **MIN()**   | Finds minimum value    | `MIN(base_salary)` |
-| **MAX()**   | Finds maximum value    | `MAX(base_salary)` |
+Aggregate functions compute a single result from multiple input rows (either the whole table or per group).
+
+- Aggregates typically **ignore NULL values** (example: `AVG(col)` ignores NULLs)
+- `COUNT(*)` counts **rows**, while `COUNT(col)` counts **non-NULL values**
 
 ---
 
-## 🧰 **Setup**
+## 📊 **Common aggregate functions**
 
-Use your existing tables from previous labs:
 
-* `organization.department`
-* `organization.employee`
-* `organization.salary`
+| Function     | Meaning                   | Notes                                 |
+| ------------ | ------------------------- | ------------------------------------- |
+| `COUNT(*)`   | number of rows            | counts NULL rows too (it counts rows) |
+| `COUNT(col)` | number of non-NULL values | ignores NULL values in `col`          |
+| `SUM(col)`   | total                     | ignores NULL values                   |
+| `AVG(col)`   | average                   | ignores NULL values                   |
+| `MIN(col)`   | smallest                  | ignores NULL values                   |
+| `MAX(col)`   | largest                   | ignores NULL values                   |
 
-If not available, recreate minimal versions:
+
+---
+
+## 🧰 **Step 0 – Setup**
+
+This lab creates its own schema (`lab09`) so it won’t conflict with previous/next labs.
+
+Run once:
 
 ```sql
-CREATE SCHEMA IF NOT EXISTS organization AUTHORIZATION postgres;
+BEGIN;
 
-CREATE TABLE organization.department (
-    dept_id SERIAL PRIMARY KEY,
-    dept_name VARCHAR(50) UNIQUE NOT NULL,
-    location VARCHAR(50)
+DROP SCHEMA IF EXISTS lab09 CASCADE;
+CREATE SCHEMA lab09;
+
+CREATE TABLE lab09.department (
+  dept_id   int PRIMARY KEY,
+  dept_name text NOT NULL UNIQUE
 );
 
-CREATE TABLE organization.employee (
-    emp_id SERIAL PRIMARY KEY,
-    first_name VARCHAR(50),
-    last_name VARCHAR(50),
-    dept_id INT REFERENCES organization.department(dept_id)
+CREATE TABLE lab09.employee (
+  emp_id     int PRIMARY KEY,
+  first_name text NOT NULL,
+  dept_id    int NULL REFERENCES lab09.department(dept_id)
 );
 
-CREATE TABLE organization.salary (
-    salary_id SERIAL PRIMARY KEY,
-    emp_id INT REFERENCES organization.employee(emp_id),
-    monthly_salary NUMERIC(10,2)
+-- Salary is optional: some employees will have no salary row, and one will have a NULL salary
+CREATE TABLE lab09.salary (
+  emp_id         int PRIMARY KEY REFERENCES lab09.employee(emp_id),
+  monthly_salary numeric(12,2) NULL CHECK (monthly_salary IS NULL OR monthly_salary > 0)
 );
+
+-- Simple “fact” table to practice SUM/AVG by category and date
+CREATE TABLE lab09.sales (
+  sale_id    int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  dept_id    int NOT NULL REFERENCES lab09.department(dept_id),
+  sale_month date NOT NULL,
+  amount     numeric(12,2) NOT NULL CHECK (amount >= 0)
+);
+
+INSERT INTO lab09.department (dept_id, dept_name) VALUES
+  (10, 'IT'),
+  (20, 'Finance'),
+  (30, 'HR'),
+  (40, 'Sales'),
+  (50, 'R&D'); -- intentionally has no employees to practice “zero” groups
+
+INSERT INTO lab09.employee (emp_id, first_name, dept_id) VALUES
+  (1, 'Amina',  10),
+  (2, 'Omar',   10),
+  (3, 'Lina',   20),
+  (4, 'Noah',   30),
+  (5, 'Sara',   NULL), -- no department
+  (6, 'Yousef', 40);
+
+-- Salaries:
+-- - employee 5 has no salary row
+-- - employee 2 has a salary row with NULL to demonstrate COUNT(col) and AVG(col)
+INSERT INTO lab09.salary (emp_id, monthly_salary) VALUES
+  (1, 90000.00),
+  (2, NULL),
+  (3, 85000.00),
+  (4, 65000.00),
+  (6, 72000.00);
+
+INSERT INTO lab09.sales (dept_id, sale_month, amount) VALUES
+  (10, '2026-01-01', 120000.00),
+  (10, '2026-02-01',  80000.00),
+  (20, '2026-01-01',  40000.00),
+  (40, '2026-01-01',  60000.00),
+  (40, '2026-02-01',  90000.00),
+  (30, '2026-02-01',      0.00);
+
+COMMIT;
 ```
 
-Insert sample data:
+Optional quick check:
 
 ```sql
-INSERT INTO organization.department (dept_name, location)
-VALUES ('IT','Delhi'), ('Finance','Mumbai'), ('HR','Bangalore');
-
-INSERT INTO organization.employee (first_name, last_name, dept_id)
-VALUES
-('Varun', 'Gupta', 1),
-('Neha', 'Sharma', 2),
-('Amit', 'Verma', 1),
-('Priya', 'Patel', 3),
-('Ravi', 'Kumar', 1);
-
-INSERT INTO organization.salary (emp_id, monthly_salary)
-VALUES
-(1, 85000), (2, 90000), (3, 75000), (4, 80000), (5, 95000);
-```
-
-✅ **Verify Data**
-
-```sql
-SELECT e.first_name, d.dept_name, s.monthly_salary
-FROM organization.employee e
-JOIN organization.department d ON e.dept_id = d.dept_id
-JOIN organization.salary s ON e.emp_id = s.emp_id;
+SELECT 'department' AS table_name, count(*) AS rows FROM lab09.department
+UNION ALL SELECT 'employee', count(*) FROM lab09.employee
+UNION ALL SELECT 'salary', count(*) FROM lab09.salary
+UNION ALL SELECT 'sales', count(*) FROM lab09.sales;
 ```
 
 ---
@@ -105,187 +138,234 @@ JOIN organization.salary s ON e.emp_id = s.emp_id;
 
 ---
 
-## 🔹 **Step 1 – COUNT()**
+## 🔹 **Step 1 – COUNT basics**
 
-### 1.1 Count total employees
+### 1.1 Count all employees (rows)
 
 ```sql
 SELECT COUNT(*) AS total_employees
-FROM organization.employee;
+FROM lab09.employee;
 ```
 
-### 1.2 Count employees per department
+### 1.2 COUNT(column) vs COUNT(*)
+
+Count how many employees have a department vs total employees.
 
 ```sql
-SELECT d.dept_name, COUNT(e.emp_id) AS total_employees
-FROM organization.employee e
-JOIN organization.department d ON e.dept_id = d.dept_id
-GROUP BY d.dept_name;
+SELECT
+  COUNT(*) AS total_employees,
+  COUNT(dept_id) AS employees_with_department
+FROM lab09.employee;
 ```
+
+✅ **Observation:** `COUNT(dept_id)` ignores NULL `dept_id`.
 
 ---
 
-## 🔹 **Step 2 – SUM()**
+## 🔹 **Step 2 – COUNT per group (GROUP BY)**
 
-### 2.1 Total salary expenditure
-
-```sql
-SELECT SUM(monthly_salary) AS total_salary_cost
-FROM organization.salary;
-```
-
-### 2.2 Salary sum by department
+Count employees per department (only departments with at least one employee).
 
 ```sql
-SELECT d.dept_name, SUM(s.monthly_salary) AS total_salary
-FROM organization.employee e
-JOIN organization.department d ON e.dept_id = d.dept_id
-JOIN organization.salary s ON e.emp_id = s.emp_id
-GROUP BY d.dept_name;
-```
-
----
-
-## 🔹 **Step 3 – AVG()**
-
-### 3.1 Average salary across organization
-
-```sql
-SELECT AVG(monthly_salary) AS average_salary
-FROM organization.salary;
-```
-
-### 3.2 Average salary by department
-
-```sql
-SELECT d.dept_name, ROUND(AVG(s.monthly_salary), 2) AS avg_salary
-FROM organization.employee e
-JOIN organization.department d ON e.dept_id = d.dept_id
-JOIN organization.salary s ON e.emp_id = s.emp_id
-GROUP BY d.dept_name;
-```
-
----
-
-## 🔹 **Step 4 – MIN() and MAX()**
-
-### 4.1 Find the highest and lowest salaries
-
-```sql
-SELECT MAX(monthly_salary) AS highest_salary,
-       MIN(monthly_salary) AS lowest_salary
-FROM organization.salary;
-```
-
-### 4.2 Highest salary per department
-
-```sql
-SELECT d.dept_name, MAX(s.monthly_salary) AS max_salary
-FROM organization.employee e
-JOIN organization.department d ON e.dept_id = d.dept_id
-JOIN organization.salary s ON e.emp_id = s.emp_id
-GROUP BY d.dept_name;
-```
-
----
-
-## 🔹 **Step 5 – Using GROUP BY**
-
-### Group employees by department and count them
-
-```sql
-SELECT d.dept_name, COUNT(e.emp_id) AS emp_count
-FROM organization.employee e
-JOIN organization.department d ON e.dept_id = d.dept_id
-GROUP BY d.dept_name;
-```
-
-### Group by multiple columns
-
-```sql
-SELECT d.dept_name, e.dept_id, COUNT(*) AS total
-FROM organization.employee e
-JOIN organization.department d ON e.dept_id = d.dept_id
-GROUP BY d.dept_name, e.dept_id;
-```
-
----
-
-## 🔹 **Step 6 – Using HAVING Clause**
-
-The **HAVING** clause filters groups after aggregation (similar to WHERE, but used with `GROUP BY`).
-
-### 6.1 Departments with more than 1 employee
-
-```sql
-SELECT d.dept_name, COUNT(e.emp_id) AS total_employees
-FROM organization.employee e
-JOIN organization.department d ON e.dept_id = d.dept_id
+SELECT d.dept_name, COUNT(*) AS employee_count
+FROM lab09.employee e
+JOIN lab09.department d ON d.dept_id = e.dept_id
 GROUP BY d.dept_name
-HAVING COUNT(e.emp_id) > 1;
-```
-
-### 6.2 Departments where total salary > 200000
-
-```sql
-SELECT d.dept_name, SUM(s.monthly_salary) AS total_salary
-FROM organization.employee e
-JOIN organization.department d ON e.dept_id = d.dept_id
-JOIN organization.salary s ON e.emp_id = s.emp_id
-GROUP BY d.dept_name
-HAVING SUM(s.monthly_salary) > 200000;
+ORDER BY employee_count DESC, d.dept_name;
 ```
 
 ---
 
-## 🔹 **Step 7 – Combine Aggregates with Filtering**
+## 🔹 **Step 3 – Keeping “zero” groups (LEFT JOIN)**
 
-### 7.1 Average salary of employees joined to “IT” department
+List *all* departments, including those with **zero** employees.
 
 ```sql
-SELECT d.dept_name, ROUND(AVG(s.monthly_salary), 2) AS avg_salary
-FROM organization.employee e
-JOIN organization.department d ON e.dept_id = d.dept_id
-JOIN organization.salary s ON e.emp_id = s.emp_id
-WHERE d.dept_name = 'IT'
+SELECT
+  d.dept_name,
+  COUNT(e.emp_id) AS employee_count
+FROM lab09.department d
+LEFT JOIN lab09.employee e ON e.dept_id = d.dept_id
+GROUP BY d.dept_name
+ORDER BY d.dept_name;
+```
+
+✅ **Observation:** `COUNT(e.emp_id)` is 0 for departments with no employees.
+
+---
+
+## 🔹 **Step 4 – SUM() and AVG()**
+
+### 4.1 Total sales amount
+
+```sql
+SELECT SUM(amount) AS total_sales
+FROM lab09.sales;
+```
+
+### 4.2 Sales total per department
+
+```sql
+SELECT d.dept_name, SUM(s.amount) AS dept_sales_total
+FROM lab09.sales s
+JOIN lab09.department d ON d.dept_id = s.dept_id
+GROUP BY d.dept_name
+ORDER BY dept_sales_total DESC;
+```
+
+### 4.3 Average sales amount per department
+
+```sql
+SELECT d.dept_name, ROUND(AVG(s.amount), 2) AS dept_sales_avg
+FROM lab09.sales s
+JOIN lab09.department d ON d.dept_id = s.dept_id
+GROUP BY d.dept_name
+ORDER BY dept_sales_avg DESC;
+```
+
+---
+
+## 🔹 **Step 5 – MIN() and MAX()**
+
+Find min/max sales amount per department.
+
+```sql
+SELECT d.dept_name,
+       MIN(s.amount) AS min_sale,
+       MAX(s.amount) AS max_sale
+FROM lab09.sales s
+JOIN lab09.department d ON d.dept_id = s.dept_id
+GROUP BY d.dept_name
+ORDER BY d.dept_name;
+```
+
+---
+
+## 🔹 **Step 6 – Aggregates with JOINs (salary per department)**
+
+Compute salary totals and averages per department.
+
+```sql
+SELECT
+  d.dept_name,
+  COUNT(e.emp_id) AS employees_in_dept,
+  COUNT(sa.monthly_salary) AS employees_with_salary_value,
+  SUM(sa.monthly_salary) AS total_salary,
+  ROUND(AVG(sa.monthly_salary), 2) AS avg_salary
+FROM lab09.department d
+LEFT JOIN lab09.employee e ON e.dept_id = d.dept_id
+LEFT JOIN lab09.salary sa ON sa.emp_id = e.emp_id
+GROUP BY d.dept_name
+ORDER BY d.dept_name;
+```
+
+✅ **Observation:** `COUNT(sa.monthly_salary)` ignores NULL salary values, while `COUNT(e.emp_id)` counts employees (even those without salary rows).
+
+---
+
+## 🔹 **Step 7 – WHERE vs HAVING**
+
+### 7.1 Filter rows before aggregation (WHERE)
+
+Total sales in February only.
+
+```sql
+SELECT SUM(amount) AS feb_total_sales
+FROM lab09.sales
+WHERE sale_month = '2026-02-01';
+```
+
+### 7.2 Filter groups after aggregation (HAVING)
+
+Departments where total sales exceed 100000.
+
+```sql
+SELECT d.dept_name, SUM(s.amount) AS dept_sales_total
+FROM lab09.sales s
+JOIN lab09.department d ON d.dept_id = s.dept_id
+GROUP BY d.dept_name
+HAVING SUM(s.amount) > 100000
+ORDER BY dept_sales_total DESC;
+```
+
+---
+
+## 🔹 **Step 8 – Multi-column GROUP BY**
+
+Sales totals by department and month.
+
+```sql
+SELECT d.dept_name, s.sale_month, SUM(s.amount) AS month_total
+FROM lab09.sales s
+JOIN lab09.department d ON d.dept_id = s.dept_id
+GROUP BY d.dept_name, s.sale_month
+ORDER BY d.dept_name, s.sale_month;
+```
+
+---
+
+## 🔹 **Step 9 – Common mistake: selecting non-grouped columns**
+
+In PostgreSQL, every selected column must be either:
+
+- aggregated (e.g., `SUM(amount)`), or
+- included in `GROUP BY`
+
+✅ Correct pattern:
+
+```sql
+SELECT d.dept_name, COUNT(*) AS employee_count
+FROM lab09.employee e
+JOIN lab09.department d ON d.dept_id = e.dept_id
 GROUP BY d.dept_name;
 ```
 
 ---
 
-## 🧾 **Summary Table**
+## 🧾 **Summary**
 
-| Function     | Description            | Example                       |
-| ------------ | ---------------------- | ----------------------------- |
-| **COUNT()**  | Counts rows            | `COUNT(*)`                    |
-| **SUM()**    | Total sum              | `SUM(salary)`                 |
-| **AVG()**    | Average value          | `AVG(salary)`                 |
-| **MIN()**    | Smallest value         | `MIN(salary)`                 |
-| **MAX()**    | Largest value          | `MAX(salary)`                 |
-| **GROUP BY** | Groups data by column  | `GROUP BY dept_name`          |
-| **HAVING**   | Filters after grouping | `HAVING SUM(salary) > 200000` |
+- `**COUNT(*)` vs `COUNT(col)`**: rows vs non-NULL values
+- `**GROUP BY**`: one output row per group; selected columns must be grouped or aggregated
+- `**WHERE**` filters rows **before** aggregation
+- `**HAVING`** filters groups **after** aggregation
+- Use **LEFT JOIN** to keep “zero” groups and `COALESCE(...)` when you need to display zeros instead of NULLs
 
 ---
 
 ## ✅ **Deliverables**
 
-Each learner should:
+Submit **one `.sql` file** containing:
 
-1. Execute all examples for `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`.
-2. Run `GROUP BY` and `HAVING` queries with valid output.
-3. Submit:
-
-   * Table structures (`\d organization.*`)
-   * Query results screenshots
-   * A short summary of difference between `WHERE` and `HAVING`.
+- Step 1.2 (COUNT(*) vs COUNT(column))
+- Step 3 (departments with zero employees)
+- Step 6 (salary aggregates per department)
+- Step 7.2 (HAVING example)
+- Step 8 (multi-column grouping)
 
 ---
 
-## ⚙️ **Practice Challenges**
+## ⚙️ **Practice Exercises**
 
-1. Find the **department with the highest total salary**.
-2. Display **total employees and average salary per department**.
-3. Show **departments having total salary less than 200000**.
-4. Find the **minimum, maximum, and average salary in IT**.
-5. Find **number of employees with salary above organization average**.
+Use the `lab09` schema.
+
+1. **Departments with the highest total sales**
+  Return the department(s) with the highest `SUM(amount)`.
+2. **Employees without a salary row**
+  List employees who do not have a row in `lab09.salary`.
+3. **Employees with salary above organization average**
+  Count how many employees have a `monthly_salary` greater than the overall average salary (ignore NULL salaries).
+4. **Departments with average salary below 80000**
+  Include departments even if they have 0 salaries (treat “no salaries” as average = NULL and decide how you want to handle it).
+5. **Month with highest total sales (stretch)**
+  Return the `sale_month` with the highest total sales amount.
+
+---
+
+## 🧹 **Cleanup (avoid conflicts with the next lab)**
+
+Run when you finish the lab:
+
+```sql
+DROP SCHEMA IF EXISTS lab09 CASCADE;
+```
 

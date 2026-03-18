@@ -5,32 +5,41 @@
 
 ## 🎯 **Objectives**
 
-By the end of this lab, learners will:
+By the end of this lab, learners will be able to:
 
-* Interpret **query execution plans** using `EXPLAIN` and `ANALYZE`.
-* Understand **Sequential Scan vs Index Scan** behavior.
+* Interpret **query execution plans** using `EXPLAIN` and `EXPLAIN ANALYZE`.
+* Explain and compare **Sequential Scan vs Index Scan** behavior.
 * Use **VACUUM**, **ANALYZE**, and **Autovacuum** to maintain performance.
-* Design **indexing strategies** for high-volume workloads.
-* Apply **table partitioning** to handle large datasets.
-* Monitor active queries, locks, and performance metrics with **pg_stat_activity**.
+* Design basic **indexing strategies** for high-volume workloads.
+* Apply **table partitioning** concepts to large datasets.
+* Monitor active queries and locks using **pg_stat_activity** and `pg_locks`.
 
 ---
 
-## 🧠 **Concept Overview**
+## 🧭 **Introduction & Concept Overview**
+
+PostgreSQL’s performance depends on:
+
+- How the **planner** executes queries (execution plans, scans, use of indexes).
+- How well **statistics and storage** are maintained (VACUUM/ANALYZE/autovacuum).
+- How **indexes and partitions** are designed for real workloads.
+- How effectively you **monitor** running queries and locks.
+
+This lab walks through each of these, using a synthetic `sales` workload to simulate a large table.
 
 | Area                 | Description                                                                                                               |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| **Execution Plans**  | PostgreSQL’s optimizer chooses how to execute a query; `EXPLAIN` shows the plan, `EXPLAIN ANALYZE` executes and times it. |
-| **Sequential Scan**  | Reads the entire table – efficient for small tables, expensive for large ones.                                            |
-| **Index Scan**       | Uses an index to fetch matching rows directly.                                                                            |
-| **VACUUM / ANALYZE** | Reclaims storage and updates statistics for the planner.                                                                  |
-| **Autovacuum**       | Automatic background maintenance for tables.                                                                              |
-| **Partitioning**     | Splits large tables into smaller child tables for faster access.                                                          |
-| **pg_stat_activity** | View current backend activity, query text, and locks.                                                                     |
+| **Execution Plans**  | `EXPLAIN` shows the plan; `EXPLAIN ANALYZE` executes and measures it.                                                    |
+| **Sequential Scan**  | Reads the entire table – often fine for small tables, expensive for large ones.                                          |
+| **Index Scan**       | Uses an index to fetch matching rows directly.                                                                           |
+| **VACUUM / ANALYZE** | Reclaims dead tuples and updates planner statistics.                                                                     |
+| **Autovacuum**       | Automatic background maintenance based on activity thresholds.                                                            |
+| **Partitioning**     | Splits large tables into smaller child tables for faster access and maintenance.                                        |
+| **pg_stat_activity** | Shows current backend activity, query text, and, together with `pg_locks`, helps diagnose blocking.                      |
 
 ---
 
-## 🧰 **Setup**
+## 🧰 **Step 0 – Setup (make this lab independent)**
 
 Continue with your running container or start a new one:
 
@@ -248,17 +257,14 @@ Execution time decreases, and the plan now uses `Index Scan Backward`.
 
 ---
 
-## 🧾 **Summary Table**
+## 🧾 **Summary**
 
-| Area                     | Key Command / Concept                          |
-| ------------------------ | ---------------------------------------------- |
-| Execution Plan           | `EXPLAIN`, `EXPLAIN ANALYZE`                   |
-| Sequential vs Index Scan | `enable_seqscan = off`                         |
-| Maintenance              | `VACUUM`, `ANALYZE`, `Autovacuum`              |
-| Index Strategy           | Single & composite indexes                     |
-| Partitioning             | `PARTITION BY RANGE`                           |
-| Monitoring               | `pg_stat_activity`, `pg_locks`                 |
-| Query Optimization       | `log_min_duration_statement`, `EXPLAIN` tuning |
+- **Execution plans**: always inspect `EXPLAIN` / `EXPLAIN ANALYZE` before tuning.
+- **Sequential vs Index Scan**: indexes help selective queries on large tables; Seq Scan can still be best for small or broad scans.
+- **Maintenance**: `VACUUM`, `ANALYZE`, and autovacuum keep tables lean and statistics fresh.
+- **Indexing strategy**: choose single vs composite indexes based on real predicates and sorting needs.
+- **Partitioning**: range partitioning combined with pruning can significantly reduce scanned data for large tables.
+- **Monitoring**: `pg_stat_activity`, `pg_locks`, and query logging reveal slow or blocked queries.
 
 ---
 
@@ -266,21 +272,30 @@ Execution time decreases, and the plan now uses `Index Scan Backward`.
 
 Each learner should submit:
 
-1. Screenshots of `EXPLAIN ANALYZE` before / after indexing.
-2. Output of `pg_stat_activity` showing active sessions.
-3. Evidence of `VACUUM`/`ANALYZE` execution.
-4. Partition pruning plan screenshot.
-5. A short summary on which optimization had the biggest effect.
+1. `EXPLAIN ANALYZE` output screenshots (or captured text) **before and after** indexing `sales(category)` and `sales(price)`.
+2. Evidence of `VACUUM` / `ANALYZE` on `sales` (commands plus any relevant statistics).
+3. At least one example of **partition pruning** on `sales_partitioned`.
+4. A sample `pg_stat_activity` + `pg_locks` query showing how they would diagnose a blocked or long-running query.
+5. A short written note (3–5 bullets) summarizing which optimization had the biggest effect and why.
 
 ---
 
 ## 🧩 **Practice Challenges**
 
-1. Create a **covering index** (`INCLUDE` clause) and test performance.
-2. Build a **BRIN index** on the `sale_date` column and compare to BTREE.
-3. Configure a **custom autovacuum threshold** and observe behavior.
-4. Use `pg_stat_statements` (if enabled) to identify top slow queries.
-5. Simulate **deadlocks** and inspect with `pg_locks`.
+1. Create a **covering index** (`INCLUDE` clause, if supported) and test performance on a query that selects extra columns.
+2. Build a **BRIN index** on the `sale_date` column and compare its performance and size to a BTREE index.
+3. Configure a **custom autovacuum threshold** for `sales` and observe its behavior in `pg_stat_user_tables`.
+4. Use `pg_stat_statements` (if enabled) to identify top slow queries and test an optimization on one of them.
+5. Simulate **deadlocks** using two sessions updating rows in opposite order and inspect them with `pg_locks`.
 
 ---
+
+## 🧹 **Cleanup (optional, to avoid conflicts with future labs)**
+
+When you are done with this lab, you can drop the performance database:
+
+```sql
+DROP DATABASE IF EXISTS performancelab;
+```
+
 

@@ -1,20 +1,31 @@
-# 🧩 **Lab 15 – PostgreSQL Extensions, PostGIS & Capstone Project (Hands-on Lab)**
+# 🧩 **Lab 15 – PostgreSQL Extensions & PostGIS (Hands-on Lab + Capstone)**
 
-⏱️ *Duration: 5 Hours*
+⏱️ *Suggested duration: 4–5 hours*
+
+---
+
+## 🧭 **Introduction**
+
+PostgreSQL becomes dramatically more powerful through **extensions**: add-ons that expand the database with new data types, indexes, and functions. In this lab you’ll work with:
+
+- **Semi-structured data**: `JSONB`, arrays, and `hstore`
+- **Geospatial data** via **PostGIS**: store points/polygons and run proximity queries
+- **Performance patterns**: the right index types (`GIN`, `GiST`) and materialized views
+
+You’ll end with a small **capstone** that combines JSONB + PostGIS into a realistic reporting system.
 
 ---
 
 ## 🎯 **Objectives**
 
-By the end of this lab, learners will:
+By the end of this lab, learners will be able to:
 
 * Work with **JSON, JSONB, Arrays, and hstore** data types.
-* Install and configure **PostGIS** (spatial extension).
+* Install and verify **extensions** (PostGIS, hstore).
 * Explore **spatial data types** (`geometry`, `geography`) and queries.
 * Execute **GIS operations** like radius, polygon, and proximity searches.
-* Configure PostgreSQL in **Docker** for scalability.
-* Implement **tuning parameters** (`shared_buffers`, `work_mem`, etc.).
-* Build a **Geospatial Employee Distribution & Reporting System** (Capstone).
+* Apply **indexing strategies** for JSONB and spatial queries (`GIN`, `GiST`).
+* Build a **Geospatial Employee Distribution & Reporting System** (capstone).
 
 ---
 
@@ -27,11 +38,12 @@ By the end of this lab, learners will:
 | **PostGIS**            | Spatial extension adding geographic and geometric data support.                |
 | **Spatial Types**      | `geometry`, `geography`, `POINT`, `POLYGON`, etc.                              |
 | **GIS Queries**        | Functions like `ST_Distance`, `ST_Within`, `ST_Intersects`, etc.               |
-| **Scaling Parameters** | Tune performance via `shared_buffers`, `work_mem`, and `maintenance_work_mem`. |
+| **Indexing**           | `GIN` for JSONB; `GiST` for geospatial.                                       |
+| **Materialized Views** | Cache expensive aggregates and refresh when needed.                           |
 
 ---
 
-## 🧰 **Setup**
+## 🧰 **Step 0 – Setup (make this lab independent)**
 
 Start a PostgreSQL + PostGIS container:
 
@@ -65,6 +77,13 @@ CREATE EXTENSION IF NOT EXISTS hstore;
 
 ✅ **Observation:**
 PostGIS and hstore are now active in this database.
+
+Optional verification:
+
+```sql
+SELECT PostGIS_Version();
+SELECT extname, extversion FROM pg_extension WHERE extname IN ('postgis','hstore');
+```
 
 ---
 
@@ -127,6 +146,30 @@ Arrays and hstore store multiple values compactly, ideal for metadata or dynamic
 
 ---
 
+## 🔹 **Step 3 – Indexing JSONB (GIN)**
+
+Create a GIN index to speed up JSONB key/value queries:
+
+```sql
+CREATE INDEX idx_employee_json_details_gin
+ON employee_json
+USING GIN (details);
+```
+
+Example query:
+
+```sql
+EXPLAIN ANALYZE
+SELECT *
+FROM employee_json
+WHERE details @> '{"dept":"IT"}';
+```
+
+✅ **Observation:**
+GIN indexes are typically the go-to choice for accelerating JSONB containment queries (`@>`).
+
+---
+
 ## 🔹 **Step 3 – PostGIS Spatial Basics**
 
 Create a spatial table:
@@ -156,7 +199,7 @@ Find offices within a 500 km radius of Delhi:
 
 ```sql
 SELECT office_name,
-       ST_Distance(location, ST_GeogFromText('POINT(77.2090 28.6139)')) AS distance_km
+       ST_Distance(location, ST_GeogFromText('POINT(77.2090 28.6139)')) / 1000.0 AS distance_km
 FROM office_locations
 WHERE ST_DWithin(location, ST_GeogFromText('POINT(77.2090 28.6139)'), 500000);
 ```
@@ -177,7 +220,31 @@ WHERE ST_Within(o.location, region.boundary);
 
 ---
 
-## 🔹 **Step 5 – PostgreSQL Configuration Tuning**
+## 🔹 **Step 5 – Spatial Indexing (GiST)**
+
+Spatial indexes are critical as your geospatial tables grow.
+
+```sql
+CREATE INDEX idx_office_locations_gist
+ON office_locations
+USING GIST (location);
+```
+
+Re-run the radius query from Step 4 and compare `EXPLAIN` plans:
+
+```sql
+EXPLAIN
+SELECT office_name
+FROM office_locations
+WHERE ST_DWithin(location, ST_GeogFromText('POINT(77.2090 28.6139)'), 500000);
+```
+
+✅ **Observation:**
+GiST is the typical index type used for spatial acceleration in PostGIS.
+
+---
+
+## 🔹 **Step 6 – PostgreSQL Configuration Tuning (optional)**
 
 ```sql
 SHOW shared_buffers;
@@ -195,7 +262,7 @@ These parameters help optimize performance for large datasets or analytical work
 
 ---
 
-## 🔹 **Step 6 – Materialized Views & Indexing**
+## 🔹 **Step 7 – Materialized Views & Query Acceleration**
 
 Create a summary view:
 
@@ -205,7 +272,6 @@ SELECT details->>'dept' AS dept, COUNT(*) AS total
 FROM employee_json
 GROUP BY dept;
 
-CREATE INDEX idx_json_dept ON employee_json USING GIN (details);
 REFRESH MATERIALIZED VIEW emp_summary;
 SELECT * FROM emp_summary;
 ```
@@ -304,16 +370,12 @@ Only authorized roles can access the data; all DDL statements are logged.
 
 ---
 
-## 🧾 **Summary Table**
+## 🧾 **Summary**
 
-| Area            | Concept                   | Example                   |
-| --------------- | ------------------------- | ------------------------- |
-| JSON / JSONB    | Semi-structured data      | `details->>'dept'`        |
-| hstore / Arrays | Key-value & lists         | `attributes->'role'`      |
-| Spatial Data    | Geolocation storage       | `GEOGRAPHY(POINT)`        |
-| GIS Queries     | Radius & polygon checks   | `ST_DWithin`, `ST_Within` |
-| Performance     | Index + Materialized View | `GIN`, `GIST`             |
-| Security        | Roles & auditing          | `log_statement='ddl'`     |
+- **Extensions**: `postgis` adds spatial types/functions; `hstore` adds key/value storage.
+- **Semi-structured data**: JSONB operators (`->`, `->>`, `@>`) are powerful with the right GIN indexes.
+- **Spatial querying**: use `ST_DWithin`, `ST_Distance`, and polygon operators for location intelligence.
+- **Performance patterns**: `GIN` for JSONB, `GiST` for spatial, and materialized views for cached aggregates.
 
 ---
 
@@ -337,3 +399,17 @@ Each learner must:
 5. Tune configuration parameters for large-scale datasets.
 
 ---
+
+## 🧹 **Cleanup (optional, to avoid conflicts with future labs)**
+
+When finished, drop the lab database and remove the container (optional):
+
+```sql
+-- From psql (connect to a different DB first)
+\c postgres
+DROP DATABASE IF EXISTS postgis_lab;
+```
+
+```bash
+docker rm -f pg-postgis
+```

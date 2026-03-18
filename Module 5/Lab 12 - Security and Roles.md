@@ -1,37 +1,49 @@
-
 # 🧩 **Lab 12 – PostgreSQL Security, Access Control & Auditing (Hands-on Lab)**
 
 ---
 
 ## 🎯 **Objectives**
 
-By the end of this lab, learners will:
+By the end of this lab, learners will be able to:
 
-* Understand PostgreSQL **Role-Based Access Control (RBAC)**
-* Create and manage **roles and privileges** using `GRANT` and `REVOKE`
-* Configure **schema-level and object-level access**
-* Learn about **authentication methods** (`md5`, `scram-sha-256`)
-* Implement **Row-Level Security (RLS)** policies
-* Enable **auditing and logging** for compliance
-* Practice **encryption** at rest and in transit
+- Explain PostgreSQL **Role-Based Access Control (RBAC)**.
+- Create and manage **roles and privileges** using `GRANT` and `REVOKE`.
+- Configure **schema-level and object-level access** rules.
+- Describe and configure **authentication methods** (`md5`, `scram-sha-256`).
+- Implement **Row-Level Security (RLS)** policies.
+- Enable **auditing and logging** for compliance (including `log_statement`, `log_connections`, `pgaudit`).
+- Apply **encryption** concepts for data-at-rest (`pgcrypto` / disk) and data-in-transit (SSL/TLS).
 
 ---
 
-## 🧠 **Concept Overview**
+## 🧭 **Introduction & Concept Overview**
+
+PostgreSQL provides multiple layers of security:
+
+- **Authentication** – who can connect (e.g., `md5`, `scram-sha-256`, `trust`, `peer`).
+- **Authorization / RBAC** – what a role can do (`GRANT`, `REVOKE`, schema & table privileges).
+- **Row-Level Security (RLS)** – which *rows* a role can see or modify.
+- **Auditing & logging** – what activity is recorded.
+- **Encryption** – how data is protected in storage and over the network.
+
+In this lab, you will walk through each layer using a dedicated `securitylab` database.
+
 
 | Topic              | Description                                                                   |
 | ------------------ | ----------------------------------------------------------------------------- |
-| **RBAC**           | Assign privileges based on roles rather than individual users                 |
-| **GRANT / REVOKE** | Allow or remove access to schemas, tables, and objects                        |
-| **RLS**            | Control which rows a user can view or modify                                  |
+| **RBAC**           | Assign privileges based on roles instead of individual users                  |
+| **GRANT / REVOKE** | Allow or remove access to schemas, tables, and specific operations            |
+| **Authentication** | Control how passwords are verified (`md5`, `scram-sha-256`, etc.)             |
+| **RLS**            | Restrict which rows a user can view or modify                                 |
 | **Auditing**       | Record statements, logins, and activity via PostgreSQL settings or extensions |
-| **Encryption**     | Protect data in storage and during transmission                               |
+| **Encryption**     | Protect data at rest (columns/disk) and in transit (SSL/TLS)                  |
+
 
 ---
 
-## 🧰 **Setup**
+## 🧰 **Step 0 – Setup**
 
-Start with your running PostgreSQL container (from previous labs):
+Start with your running PostgreSQL instance or container (from previous labs):
 
 ```bash
 docker exec -it postgres-container bash
@@ -139,7 +151,8 @@ Only assigned roles can access schema objects; others cannot even list the schem
 
 ## 🔹 **Step 5 – Authentication Methods Overview**
 
-> Authentication is configured in **`pg_hba.conf`**, located in the container’s `/var/lib/postgresql/data`.
+> Authentication is configured in `**pg_hba.conf`**, located in the container’s `/var/lib/postgresql/data`.
+
 
 | Method          | Description                           |
 | --------------- | ------------------------------------- |
@@ -147,6 +160,7 @@ Only assigned roles can access schema objects; others cannot even list the schem
 | `md5`           | MD5 password hashing                  |
 | `scram-sha-256` | Modern, stronger password hashing     |
 | `peer`          | System user match (local connections) |
+
 
 ### Check your current method:
 
@@ -299,44 +313,55 @@ Connection established securely over SSL.
 
 ---
 
-## 🧾 **Summary Table**
+## 🧾 **Summary**
 
-| Area                 | Concept             | Command / File             |
-| -------------------- | ------------------- | -------------------------- |
-| RBAC                 | Role creation       | `CREATE ROLE`, `GRANT`     |
-| Privileges           | Fine-grained access | `GRANT / REVOKE`           |
-| Authentication       | Password hashing    | `md5`, `scram-sha-256`     |
-| RLS                  | Per-user filters    | `CREATE POLICY`            |
-| Auditing             | Activity logs       | `log_statement`, `pgaudit` |
-| Encryption (rest)    | Column encryption   | `pgcrypto`                 |
-| Encryption (transit) | SSL/TLS setup       | `ssl = on`                 |
+- **RBAC & privileges**: use roles plus `GRANT`/`REVOKE` on schemas and tables to enforce least privilege.
+- **Authentication**: configure secure password methods (prefer `scram-sha-256` over `md5`).
+- **Row-Level Security (RLS)**: add per-row filters with `CREATE POLICY` on sensitive tables.
+- **Auditing & logging**: use `log_statement`, `log_connections`, and optionally `pgaudit` for detailed activity records.
+- **Encryption**: protect data at rest with `pgcrypto` (and/or disk encryption) and in transit with SSL/TLS.
 
 ---
 
 ## ✅ **Deliverables**
 
-Each learner should:
+Submit **one `.sql` file** plus any required configuration snippets containing:
 
-1. Create and configure three roles (`admin`, `dev`, `readonly`).
-2. Demonstrate RBAC with `GRANT`/`REVOKE`.
-3. Enable and test **RLS** and **logging**.
-4. Show **pgcrypto encryption** and **SSL-enabled connection**.
-5. Submit screenshots of:
-
-   * Role creation and privileges
-   * RLS query results
-   * Encrypted/decrypted data
-   * SSL connection status
+1. Role and user creation with `GRANT`/`REVOKE` for `admin_role`, `dev_role`, and `readonly_role`.
+2. Schema and table setup in `securitylab` and example queries showing access differences between roles.
+3. At least one **RLS policy** and a test query run under a restricted role.
+4. `pgcrypto` encryption and decryption example for a sensitive column.
+5. A short note or screenshot confirming **logging/auditing** and **SSL/TLS** settings.
 
 ---
 
 ## 🧩 **Practice Challenges**
 
-1. Create a custom RLS policy where a manager can see all employees in their department.
-2. Revoke all write permissions from `readonly_user` and verify enforcement.
-3. Encrypt multiple fields (like `salary`, `email`) using different keys.
-4. Enable `log_duration` and analyze query execution times.
-5. Use an external SSL certificate for production-like configuration.
+1. Create a custom RLS policy where a manager can see all employees in their department, but regular users only see themselves.
+2. Revoke all write permissions from `readonly_user` and verify enforcement by attempting `INSERT`/`UPDATE`/`DELETE`.
+3. Encrypt multiple fields (like `salary`, `email`) using different keys and document how key rotation would work.
+4. Enable `log_duration` or `log_min_duration_statement` and analyze query execution times from the logs.
+5. Use an external SSL certificate (self-signed CA + server cert) to replace the simple lab certificate.
 
 ---
+
+## 🧹 **Cleanup**
+
+When you are done with this lab, you can remove the lab database and roles:
+
+```sql
+DROP DATABASE IF EXISTS securitylab;
+
+REVOKE admin_role FROM admin_user;
+REVOKE dev_role FROM dev_user;
+REVOKE readonly_role FROM readonly_user;
+
+DROP ROLE IF EXISTS admin_role;
+DROP ROLE IF EXISTS dev_role;
+DROP ROLE IF EXISTS readonly_role;
+
+DROP USER IF EXISTS admin_user;
+DROP USER IF EXISTS dev_user;
+DROP USER IF EXISTS readonly_user;
+```
 

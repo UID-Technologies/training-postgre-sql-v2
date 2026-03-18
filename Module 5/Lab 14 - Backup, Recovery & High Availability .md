@@ -2,6 +2,17 @@
 
 ---
 
+## 🧭 **Introduction**
+
+Backups and high availability are not optional in production PostgreSQL. This lab teaches practical, operator-grade basics:
+
+- **Logical backups** for portability and selective restores (`pg_dump`, `pg_dumpall`, `pg_restore`)
+- **Physical backups** and how they relate to **WAL** and **PITR**
+- **Streaming replication** concepts and a demo setup
+- HA tooling patterns (pgPool-II / Patroni) and scaling/failover strategies
+
+---
+
 ## 🎯 **Objectives**
 
 By the end of this lab, learners will:
@@ -43,6 +54,10 @@ docker exec -it pg-backup bash
 psql -U postgres
 ```
 
+---
+
+## 🧰 **Step 0 – Setup (make this lab independent)**
+
 Create a demo database:
 
 ```sql
@@ -76,6 +91,16 @@ pg_dump -U postgres -d backup_lab -F c -f /tmp/backup_lab.dump
 
 ✅ **Observation:**
 A `.dump` file is created with compressed format (`-F c`).
+
+### Useful variations (optional)
+
+```bash
+# Schema-only
+pg_dump -U postgres -d backup_lab --schema-only -f /tmp/backup_lab_schema.sql
+
+# Data-only
+pg_dump -U postgres -d backup_lab --data-only -f /tmp/backup_lab_data.sql
+```
 
 ---
 
@@ -112,6 +137,22 @@ psql -U postgres -f /tmp/full_backup.sql
 
 ✅ **Observation:**
 `pg_dumpall` exports all databases, roles, and global objects.
+
+---
+
+## 🔹 **Step 3 – WAL Basics (Write-Ahead Log)**
+
+WAL records changes before they are written to data files. It powers crash recovery, replication, and PITR.
+
+Run inside `psql`:
+
+```sql
+SELECT pg_current_wal_lsn() AS current_wal_lsn;
+SELECT pg_walfile_name(pg_current_wal_lsn()) AS current_wal_segment;
+```
+
+✅ **Observation:**
+You can see the current WAL position and the WAL segment name PostgreSQL is writing.
 
 ---
 
@@ -168,9 +209,9 @@ This backup contains full binary data including WAL logs — suitable for PITR.
 Edit configuration:
 
 ```bash
+mkdir -p /var/lib/postgresql/wal_archive
 echo "archive_mode = on" >> /var/lib/postgresql/data/postgresql.conf
 echo "archive_command = 'cp %p /var/lib/postgresql/wal_archive/%f'" >> /var/lib/postgresql/data/postgresql.conf
-mkdir /var/lib/postgresql/wal_archive
 pg_ctl -D /var/lib/postgresql/data restart
 ```
 
@@ -207,6 +248,7 @@ DELETE FROM employees;
    ```bash
    echo "restore_command = 'cp /var/lib/postgresql/wal_archive/%f %p'" >> /var/lib/postgresql/data/postgresql.conf
    echo "recovery_target_time = '2025-11-05 10:30:00+05:30'" >> /var/lib/postgresql/data/postgresql.conf
+   touch /var/lib/postgresql/data/recovery.signal
    ```
 
 4. Start PostgreSQL:
@@ -240,10 +282,24 @@ echo "host replication all 0.0.0.0/0 trust" >> /var/lib/postgresql/data/pg_hba.c
 pg_ctl -D /var/lib/postgresql/data restart
 ```
 
+Create a replication user (recommended for real setups; demo uses trust above):
+
+```bash
+docker exec -it pg-primary psql -U postgres -c "CREATE ROLE repl WITH REPLICATION LOGIN PASSWORD 'Repl@123';"
+```
+
+Create a demo database/table on the primary:
+
+```bash
+docker exec -it pg-primary psql -U postgres -c "CREATE DATABASE repl_lab;"
+docker exec -it pg-primary psql -U postgres -d repl_lab -c "CREATE TABLE IF NOT EXISTS employees(id int primary key, full_name text, dept text, salary numeric(10,2));"
+docker exec -it pg-primary psql -U postgres -d repl_lab -c "INSERT INTO employees VALUES (1,'ReplicaSeed','IT',700000) ON CONFLICT (id) DO NOTHING;"
+```
+
 ### 3️⃣ Take Base Backup for Replica
 
 ```bash
-pg_basebackup -h pg-primary -D /var/lib/postgresql/data -U postgres -Fp -Xs -P -R
+docker exec -it pg-replica bash -lc "rm -rf /var/lib/postgresql/data/* && pg_basebackup -h pg-primary -D /var/lib/postgresql/data -U repl -Fp -Xs -P -R"
 ```
 
 ✅ **Observation:**
@@ -252,12 +308,14 @@ Replica now continuously applies WAL files from the primary server.
 Test by inserting a new row in primary:
 
 ```sql
-INSERT INTO employees VALUES (5, 'ReplicaTest', 'IT', 700000);
+\c repl_lab
+INSERT INTO employees VALUES (2, 'ReplicaTest', 'IT', 700000);
 ```
 
 Check replica:
 
 ```sql
+\c repl_lab
 SELECT * FROM employees;
 ```
 
@@ -323,3 +381,19 @@ Each learner should:
 5. Configure **pgPool-II** load balancing between primary and replica for read queries.
 
 ---
+
+## 🧹 **Cleanup (optional, to avoid conflicts with future labs)**
+
+When you are done:
+
+```sql
+-- From psql
+DROP DATABASE IF EXISTS backup_lab;
+DROP DATABASE IF EXISTS restore_lab;
+DROP DATABASE IF EXISTS repl_lab;
+```
+
+```bash
+# Stop and remove demo containers (optional)
+docker rm -f pg-backup pg-primary pg-replica
+```

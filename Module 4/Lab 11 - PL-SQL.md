@@ -5,22 +5,44 @@
 
 ## 🎯 **Objectives**
 
-By the end of this lab, learners will:
+By the end of this lab, learners will be able to:
 
-* Understand what **PL/pgSQL** is and how it extends standard SQL.
+* Explain the **PL/pgSQL language** and when to use it.
 * Declare and use **variables and data types**.
 * Implement **conditional logic** (`IF/ELSIF/ELSE`) and **loops** (`FOR`, `WHILE`).
-* Create and execute **functions** and **procedures**.
-* Handle **exceptions** gracefully.
+* Create and execute **functions with IN/OUT parameters**.
+* Implement **stored procedure patterns** for batch updates.
+* Handle **exceptions** gracefully using `EXCEPTION WHEN`.
 * Work with **cursors** for pagination and data iteration.
-* Apply all concepts through practical exercises.
 
 ---
 
 ## 🧠 **What is PL/pgSQL?**
 
-**PL/pgSQL (PostgreSQL Procedural Language)** is PostgreSQL’s built-in language that allows procedural logic inside the database.
-You can use variables, loops, conditionals, and error handling — making it ideal for stored functions and business rules.
+**PL/pgSQL (PostgreSQL Procedural Language)** is PostgreSQL’s built-in procedural language that allows logic to run inside the database engine.
+
+You can:
+
+- Declare **variables** and use strong **data types**.
+- Add **control flow**: `IF`, `ELSIF`, `ELSE`, `LOOP`, `WHILE`, `FOR`.
+- Build **functions** and **stored procedures** for shared business rules.
+- Use **exception handling** and **cursors** for more advanced patterns.
+
+It is ideal for operations that need to run close to the data (validations, batch jobs, common calculations).
+
+---
+
+## 📚 **PL/pgSQL Language Overview**
+
+Key language elements you will practice in this lab:
+
+- **Blocks**: anonymous (`DO $$ ... $$`) vs named (`CREATE FUNCTION` / `CREATE PROCEDURE`).
+- **Variables and data types**: `DECLARE v_count int;`, `TEXT`, `NUMERIC`, etc.
+- **Conditional statements**: `IF/ELSIF/ELSE`.
+- **Loops**: `LOOP`, `WHILE`, and `FOR ... IN SELECT`.
+- **Functions with parameters**: `IN`, `OUT`, and `INOUT`.
+- **Exception handling**: `BEGIN ... EXCEPTION WHEN ... THEN ... END`.
+- **Cursors**: `REFCURSOR`, `OPEN`, `FETCH`, `CLOSE` and cursor-style pagination.
 
 ---
 
@@ -295,39 +317,104 @@ Function handles arithmetic errors safely.
 
 ---
 
-## 🧾 **Summary Table**
+## 🔹 **Step 10 – Function with INOUT Parameter**
 
-| Concept     | Example Topic           | Command Used                |
-| ----------- | ----------------------- | --------------------------- |
-| Variables   | Declaring and Assigning | `DECLARE`, `INTO`           |
-| Conditional | IF/ELSIF/ELSE           | `IF` logic                  |
-| Loops       | Iteration over rows     | `FOR`, `WHILE`              |
-| Function    | Bonus Calculator        | `CREATE FUNCTION`           |
-| Procedure   | Payroll Update          | `CREATE PROCEDURE` + `CALL` |
-| Exception   | Error Handling          | `BEGIN … EXCEPTION WHEN`    |
-| Cursor      | Data Pagination         | `OPEN`, `FETCH`, `CLOSE`    |
+Use an `INOUT` parameter to both **accept** and **return** a value.
+
+```sql
+CREATE OR REPLACE FUNCTION hr.normalize_rating(
+  INOUT p_rating INT
+) LANGUAGE plpgsql AS $$
+BEGIN
+  IF p_rating IS NULL THEN
+    p_rating := 3;           -- default rating
+  ELSIF p_rating < 1 THEN
+    p_rating := 1;
+  ELSIF p_rating > 5 THEN
+    p_rating := 5;
+  END IF;
+END$$;
+
+-- Test
+SELECT hr.normalize_rating(0)   AS r1,  -- becomes 1
+       hr.normalize_rating(10)  AS r2,  -- becomes 5
+       hr.normalize_rating(NULL) AS r3; -- becomes 3
+```
+
+✅ **Observation:**
+The same parameter is used as both input and normalized output.
+
+---
+
+## 🔹 **Step 11 – Loop with CONTINUE and EXIT**
+
+Demonstrate more advanced loop control using `CONTINUE` and `EXIT`.
+
+```sql
+DO $$
+DECLARE
+  rec hr.employees%ROWTYPE;
+BEGIN
+  FOR rec IN SELECT * FROM hr.employees ORDER BY emp_id LOOP
+    -- Skip Finance department completely
+    IF rec.dept = 'Finance' THEN
+      CONTINUE;
+    END IF;
+
+    RAISE NOTICE 'Processing employee % (%), dept=%',
+      rec.emp_id, rec.full_name, rec.dept;
+
+    -- Stop once we have processed 3 non-Finance employees
+    IF rec.emp_id >= 3 THEN
+      EXIT;
+    END IF;
+  END LOOP;
+END$$;
+```
+
+✅ **Observation:**
+Shows how to skip specific rows and break out of a loop early.
+
+---
+
+## 🧾 **Summary**
+
+- **PL/pgSQL Language**: blocks, variables, and strong typing.
+- **Control flow**: `IF/ELSIF/ELSE` and loops (`WHILE`, `FOR`) for procedural logic.
+- **Functions and procedures**: reusable units with `IN`/`OUT` parameters and `CALL`.
+- **Exception handling**: `EXCEPTION WHEN` to catch and handle runtime errors.
+- **Cursors and pagination**: row-by-row processing and key-set pagination patterns.
 
 ---
 
 ## ✅ **Deliverables**
 
-Each learner should:
+Submit **one `.sql` file** containing:
 
-1. Run all 9 steps in `psql`.
-2. Capture screenshots of:
+- Step 1 (variables and data types example).
+- Step 2 (IF/ELSIF/ELSE example).
+- Step 4 (function with OUT parameter) and its test query.
+- Step 7 (stored procedure pattern) and at least one `CALL`.
+- Step 8 or 9 (a cursor or exception-handling function).
 
-   * Variable, IF/ELSE, Loop outputs.
-   * Function and procedure execution results.
-   * Cursor iteration and safe divide function.
-3. Submit a `.sql` file or screenshots with output evidence.
+Screenshots are optional if required by your platform.
 
 ---
 
 ## 🧩 **Practice Challenges**
 
-1. Write a function `hr.get_employee_bonus(dept TEXT)` that returns total bonus per department.
-2. Create a procedure that reduces salary by 10 % for employees with rating < 3.
-3. Implement a cursor to print all departments and count employees in each.
-4. Add error handling to skip invalid salary records (< 0) and log them in a table.
+1. Write a function `hr.get_employee_bonus(dept TEXT)` that returns total bonus per department using the `hr.calc_bonus` logic.
+2. Create a procedure that reduces salary by 10 % for employees with rating < 3, with proper exception handling for negative salaries.
+3. Implement a cursor to print all departments and count employees in each (hint: `GROUP BY` + cursor over the grouped result).
+4. Add a logging table and extend one function/procedure to **log errors or skipped rows** instead of only raising notices.
 
 ---
+
+## 🧹 **Cleanup (optional, to avoid conflicts with future labs)**
+
+When you are done with this lab, you can drop the training database:
+
+```sql
+DROP DATABASE IF EXISTS pllab;
+```
+
