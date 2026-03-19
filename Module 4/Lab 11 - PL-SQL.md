@@ -269,13 +269,14 @@ Procedure updates and reports affected rows.
 CREATE OR REPLACE FUNCTION hr.paginate_employees(
   p_last_id INT DEFAULT 0,
   p_limit INT DEFAULT 2
-) RETURNS TABLE(emp_id INT, full_name TEXT, salary NUMERIC) AS $$
+) RETURNS TABLE(emp_id INT, full_name TEXT, salary NUMERIC) 
+AS $$
 BEGIN
   RETURN QUERY
-  SELECT emp_id, full_name, salary
-  FROM hr.employees
-  WHERE emp_id > p_last_id
-  ORDER BY emp_id
+  SELECT e.emp_id, e.full_name, e.salary
+  FROM hr.employees e
+  WHERE e.emp_id > p_last_id
+  ORDER BY e.emp_id
   LIMIT p_limit;
 END$$ LANGUAGE plpgsql;
 
