@@ -194,6 +194,15 @@ CREATE TABLE sales_2025_01 PARTITION OF sales_partitioned
 
 CREATE TABLE sales_2025_02 PARTITION OF sales_partitioned
   FOR VALUES FROM ('2025-02-01') TO ('2025-03-01');
+
+
+-- Continue...
+
+CREATE TABLE sales_2025_11 PARTITION OF sales_partitioned
+FOR VALUES FROM ('2025-11-01') TO ('2025-12-01');
+
+CREATE TABLE sales_2025_12 PARTITION OF sales_partitioned
+FOR VALUES FROM ('2025-12-01') TO ('2026-01-01');
 ```
 
 ### 3️⃣ Insert Data and Test
