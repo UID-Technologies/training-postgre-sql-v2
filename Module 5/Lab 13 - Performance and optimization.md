@@ -80,7 +80,7 @@ SELECT
   CASE WHEN random() < 0.5 THEN 'Electronics' ELSE 'Clothing' END,
   (random()*10)::INT + 1,
   (random()*5000)::NUMERIC(10,2),
-  NOW() - (random()*365)::INT
+  NOW() - ((random()*365)::INT * INTERVAL '1 day')
 FROM generate_series(1,1000000);
 ```
 
