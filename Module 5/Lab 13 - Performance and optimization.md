@@ -203,6 +203,11 @@ FOR VALUES FROM ('2025-11-01') TO ('2025-12-01');
 
 CREATE TABLE sales_2025_12 PARTITION OF sales_partitioned
 FOR VALUES FROM ('2025-12-01') TO ('2026-01-01');
+
+-- Default Partition (Safety Net)
+CREATE TABLE sales_default 
+PARTITION OF sales_partitioned DEFAULT;
+
 ```
 
 ### 3️⃣ Insert Data and Test
